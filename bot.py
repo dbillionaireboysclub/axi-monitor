@@ -43,16 +43,26 @@ async def fetch_axi_csv():
         try:
             log.info("Going to login page...")
             await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
-            await asyncio.sleep(2)
+            await asyncio.sleep(3)
 
             log.info("Filling login form...")
+            await page.locator('#user').wait_for(timeout=10000)
             await page.locator('#user').fill(AXI_EMAIL)
+            await asyncio.sleep(0.5)
             await page.locator('#password').fill(AXI_PASSWORD)
+            await asyncio.sleep(0.5)
 
-            log.info("Submitting...")
-            await page.evaluate("sumbitForm()")
+            log.info("Submitting via JS...")
+            await page.evaluate("""
+                document.querySelector('#user').value = arguments[0];
+                document.querySelector('#password').value = arguments[1];
+                sumbitForm();
+            """, AXI_EMAIL, AXI_PASSWORD)
+
+            await asyncio.sleep(5)
             await page.wait_for_load_state("networkidle", timeout=20000)
 
+            log.info(f"After submit URL: {page.url}")
             if "login" in page.url.lower() or "v2" in page.url.lower():
                 raise RuntimeError(f"Login failed — still on: {page.url}")
             log.info(f"Logged in. URL: {page.url}")
@@ -97,10 +107,10 @@ def process(raw):
     out = []
     for row in raw:
         h = list(row.keys())
-        deps = parse_num(row.get(find_col(h,"Deposits","First Deposit") or "", 0))
+        deps  = parse_num(row.get(find_col(h,"Deposits","First Deposit") or "", 0))
         withs = parse_num(row.get(find_col(h,"Withdrawals","Withdrawal") or "", 0))
-        net  = parse_num(row.get(find_col(h,"Net Deposits","NetDeposits") or "", 0))
-        pct  = wpct(deps, withs)
+        net   = parse_num(row.get(find_col(h,"Net Deposits","NetDeposits") or "", 0))
+        pct   = wpct(deps, withs)
         out.append({
             "user_id": row.get(find_col(h,"UserID","User ID","USERID","Additional UserID") or "", "—"),
             "name":    row.get(find_col(h,"Customer Name","CustomerName","Name") or "", "—"),
