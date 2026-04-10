@@ -126,7 +126,7 @@ async def fetch_axi_csv() -> list[dict]:
             await page.goto(LOGIN_URL, wait_until="networkidle", timeout=30_000)
 
             log.info("Filling credentials...")
-            await page.fill('input[type="email"], input[name="email"], #email', AXI_EMAIL)
+            await page.fill('input[type="email"], input[name="email"], input[name="login"], input[placeholder*="email" i], input[placeholder*="Email"], #email, #login', AXI_EMAIL)
             await page.fill('input[type="password"], input[name="password"], #password', AXI_PASSWORD)
             await page.click('button[type="submit"], input[type="submit"], button:has-text("Login"), button:has-text("Sign in")')
             await page.wait_for_load_state("networkidle", timeout=20_000)
