@@ -81,9 +81,9 @@ async def fetch_axi_csv():
             await page.goto(LOGIN_URL, wait_until="networkidle", timeout=30000)
 
             log.info("Filling credentials...")
-            await page.fill('input[name="user"], #user', AXI_EMAIL)
-            await page.fill('input[name="pass"], #password', AXI_PASSWORD)
-            await page.click('input[type="submit"], button[type="submit"], button:has-text("Sign in"), button:has-text("Login")')
+            await page.fill('#user', AXI_EMAIL)
+            await page.fill('#password', AXI_PASSWORD)
+            await page.evaluate("sumbitForm()")
             await page.wait_for_load_state("networkidle", timeout=20000)
 
             if "login" in page.url.lower():
