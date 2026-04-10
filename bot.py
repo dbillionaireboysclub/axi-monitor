@@ -53,11 +53,11 @@ async def fetch_axi_csv():
             await asyncio.sleep(0.5)
 
             log.info("Submitting via JS...")
-            await page.evaluate("""
-                document.querySelector('#user').value = arguments[0];
-                document.querySelector('#password').value = arguments[1];
+            await page.evaluate(f"""
+                document.querySelector('#user').value = '{AXI_EMAIL}';
+                document.querySelector('#password').value = '{AXI_PASSWORD}';
                 sumbitForm();
-            """, AXI_EMAIL, AXI_PASSWORD)
+            """)
 
             await asyncio.sleep(5)
             await page.wait_for_load_state("networkidle", timeout=20000)
