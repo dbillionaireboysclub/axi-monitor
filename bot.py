@@ -23,7 +23,7 @@ TG_CHAT_ID   = os.environ["TG_CHAT_ID"]
 
 THRESHOLD    = float(os.getenv("WITHDRAWAL_THRESHOLD", "0.50"))   # 50%
 REPORT_URL   = "https://records.axiaffiliates.com/partner/reports/registration"
-LOGIN_URL    = "https://records.axiaffiliates.com/partner/login"
+LOGIN_URL    = "https://records.axiaffiliates.com/v2/login/"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -123,11 +123,11 @@ async def fetch_axi_csv() -> list[dict]:
         try:
             # ── 1. Login ──────────────────────────────────────────────────────
             log.info("Navigating to login page...")
-            await page.goto(LOGIN_URL, wait_until="networkidle", timeout=30_000)
+            await page.goto(LOGIN_URL    = "https://records.axiaffiliates.com/v2/login/", timeout=30_000)
 
             log.info("Filling credentials...")
             await page.fill('input[type="email"], input[name="email"], input[name="login"], input[placeholder*="email" i], input[placeholder*="Email"], #email, #login', AXI_EMAIL)
-            await page.fill('input[type="password"], input[name="password"], #password', AXI_PASSWORD)
+            await page.fill('input[name="pass"], #password', AXI_PASSWORD)
             await page.click('button[type="submit"], input[type="submit"], button:has-text("Login"), button:has-text("Sign in")')
             await page.wait_for_load_state("networkidle", timeout=20_000)
 
