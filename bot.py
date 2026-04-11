@@ -72,54 +72,26 @@ async def fetch_axi_csv():
 
             async def intercept(response):
                 url = response.url
-                ct = response.headers.get("content-type", "")
-                status = response.status
-                if status == 200 and any(x in ct for x in ["json","csv","text/plain","octet"]):
-                    log.info(f"API RESPONSE: {status} {ct[:40]} {url[:120]}")
+                if "processregreport" in url and response.status == 200:
                     try:
                         body = await response.json()
-                        if isinstance(body, list) and len(body) > 0:
-                            api_data.append(body)
-                            log.info(f"Captured list: {len(body)} rows from {url}")
-                        elif isinstance(body, dict):
-                            for key in ["data","rows","records","result","items","Data","Rows","Records"]:
-                                if key in body and isinstance(body[key], list) and len(body[key]) > 0:
-                                    api_data.append(body[key])
-                                    log.info(f"Captured dict[{key}]: {len(body[key])} rows")
-                                    break
-                            else:
-                                log.info(f"Dict keys: {list(body.keys())[:10]}")
-                    except:
-                        pass
+                        if "Registrations" in body and isinstance(body["Registrations"], list):
+                            log.info(f"Captured Registrations: {len(body['Registrations'])} rows")
+                            api_data.append(body["Registrations"])
+                    except Exception as e:
+                        log.debug(f"intercept error: {e}")
 
             page.on("response", intercept)
+            log.info("Loading report page...")
             await page.goto(REPORT_URL, wait_until="networkidle", timeout=30000)
-            await asyncio.sleep(2)
-
-            # Click Run Report button if present
-            for sel in ['button:has-text("Run")', 'button:has-text("Run Report")', 'button:has-text("Search")', 'button:has-text("Apply")']:
-                try:
-                    btn = page.locator(sel).first
-                    if await btn.count() > 0:
-                        log.info(f"Clicking: {sel}")
-                        await btn.click()
-                        await asyncio.sleep(3)
-                        break
-                except: continue
-
-            await asyncio.sleep(4)
+            await asyncio.sleep(5)
 
             if not api_data:
-                raise RuntimeError("Could not intercept report data from API.")
+                raise RuntimeError("Could not capture Registrations data from API.")
 
             raw = max(api_data, key=len)
             log.info(f"Using dataset with {len(raw)} rows")
-
-            if isinstance(raw[0], dict):
-                rows = raw
-            else:
-                raise RuntimeError("Unexpected data format from API.")
-
+            rows = raw
             log.info(f"Parsed {len(rows)} rows"); return rows
         finally:
             await browser.close()
