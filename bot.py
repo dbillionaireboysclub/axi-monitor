@@ -73,18 +73,22 @@ async def fetch_axi_csv():
             async def intercept(response):
                 url = response.url
                 ct = response.headers.get("content-type", "")
-                if ("registration" in url or "activity" in url or "report" in url) and response.status == 200:
+                status = response.status
+                if status == 200 and any(x in ct for x in ["json","csv","text/plain","octet"]):
+                    log.info(f"API RESPONSE: {status} {ct[:40]} {url[:120]}")
                     try:
                         body = await response.json()
                         if isinstance(body, list) and len(body) > 0:
                             api_data.append(body)
-                            log.info(f"Captured API data: {len(body)} rows from {url}")
+                            log.info(f"Captured list: {len(body)} rows from {url}")
                         elif isinstance(body, dict):
-                            for key in ["data","rows","records","result","items"]:
+                            for key in ["data","rows","records","result","items","Data","Rows","Records"]:
                                 if key in body and isinstance(body[key], list) and len(body[key]) > 0:
                                     api_data.append(body[key])
-                                    log.info(f"Captured API data[{key}]: {len(body[key])} rows")
+                                    log.info(f"Captured dict[{key}]: {len(body[key])} rows")
                                     break
+                            else:
+                                log.info(f"Dict keys: {list(body.keys())[:10]}")
                     except:
                         pass
 
