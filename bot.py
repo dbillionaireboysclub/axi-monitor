@@ -67,38 +67,55 @@ async def fetch_axi_csv():
                 raise RuntimeError(f"Login failed — still on: {page.url}")
             log.info(f"Logged in. URL: {page.url}")
 
-            log.info("Going to report...")
-            await page.goto(REPORT_URL, wait_until="networkidle", timeout=30000)
+            log.info("Going to report page and intercepting API...")
+            api_data = []
 
-            csv_text = None
-            for sel in ['button:has-text("Export")','button:has-text("CSV")','a:has-text("Export")','a:has-text("CSV")','[data-export]','.export-btn']:
+            async def intercept(response):
+                url = response.url
+                ct = response.headers.get("content-type", "")
+                if ("registration" in url or "activity" in url or "report" in url) and response.status == 200:
+                    try:
+                        body = await response.json()
+                        if isinstance(body, list) and len(body) > 0:
+                            api_data.append(body)
+                            log.info(f"Captured API data: {len(body)} rows from {url}")
+                        elif isinstance(body, dict):
+                            for key in ["data","rows","records","result","items"]:
+                                if key in body and isinstance(body[key], list) and len(body[key]) > 0:
+                                    api_data.append(body[key])
+                                    log.info(f"Captured API data[{key}]: {len(body[key])} rows")
+                                    break
+                    except:
+                        pass
+
+            page.on("response", intercept)
+            await page.goto(REPORT_URL, wait_until="networkidle", timeout=30000)
+            await asyncio.sleep(2)
+
+            # Click Run Report button if present
+            for sel in ['button:has-text("Run")', 'button:has-text("Run Report")', 'button:has-text("Search")', 'button:has-text("Apply")']:
                 try:
                     btn = page.locator(sel).first
                     if await btn.count() > 0:
-                        async with page.expect_download(timeout=20000) as dl:
-                            await btn.click()
-                        d = await dl.value
-                        with open(await d.path(), "r", encoding="utf-8-sig") as f:
-                            csv_text = f.read()
-                        log.info(f"Downloaded: {d.suggested_filename}"); break
+                        log.info(f"Clicking: {sel}")
+                        await btn.click()
+                        await asyncio.sleep(3)
+                        break
                 except: continue
 
-            if not csv_text:
-                resps = []
-                async def cap(r):
-                    ct = r.headers.get("content-type","")
-                    if any(x in ct for x in ["csv","text/plain","octet"]):
-                        try: resps.append((await r.body()).decode("utf-8-sig","replace"))
-                        except: pass
-                page.on("response", cap)
-                await page.reload(wait_until="networkidle", timeout=30000)
-                await asyncio.sleep(3)
-                if resps: csv_text = max(resps, key=len)
+            await asyncio.sleep(4)
 
-            if not csv_text:
-                raise RuntimeError("Could not find CSV export on the report page.")
+            if not api_data:
+                raise RuntimeError("Could not intercept report data from API.")
 
-            rows = list(csv.DictReader(io.StringIO(csv_text)))
+            raw = max(api_data, key=len)
+            log.info(f"Using dataset with {len(raw)} rows")
+
+            if isinstance(raw[0], dict):
+                rows = raw
+            else:
+                raise RuntimeError("Unexpected data format from API.")
+
             log.info(f"Parsed {len(rows)} rows"); return rows
         finally:
             await browser.close()
