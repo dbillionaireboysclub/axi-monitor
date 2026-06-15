@@ -33,7 +33,7 @@ def is_recent_month(date_str):
         else:
             prev_month, prev_year = curr_month - 1, curr_year
 
-        for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y"]:
+        for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m/%d/%Y"]:
             try:
                 d = datetime.strptime(str(date_str).strip(), fmt)
                 if d.month == curr_month and d.year == curr_year:
@@ -98,7 +98,13 @@ async def fetch_vt_data():
             if not api_data:
                 raise RuntimeError("No registration data captured.")
 
-            return max(api_data, key=len)
+            raw = max(api_data, key=len)
+
+            # Log column names for debugging
+            if raw:
+                log.info(f"Column names: {list(raw[0].keys())}")
+
+            return raw
         finally:
             await browser.close()
 
@@ -114,17 +120,17 @@ def process(raw):
 
     for row in raw:
         h = list(row.keys())
-        reg_date = row.get(find_col(h, "Registration Date", "RegistrationDate") or "", "")
+
+        reg_date = row.get(find_col(h, "Registration Date", "RegistrationDate", "Registrat") or "", "")
         valid, period = is_recent_month(reg_date)
         if not valid:
             continue
 
-        deps  = parse_num(row.get(find_col(h, "Deposits", "First Deposit") or "", 0))
+        deps  = parse_num(row.get(find_col(h, "First Deposit", "Deposits") or "", 0))
         withs = parse_num(row.get(find_col(h, "Withdrawals", "Withdrawal") or "", 0))
         net   = parse_num(row.get(find_col(h, "Net Deposits", "NetDeposits") or "", 0))
         pct   = (withs / deps * 100) if deps > 0 else 0
 
-        # Alert level
         if pct >= 100:
             alert = "critical"
         elif pct >= 50:
@@ -133,7 +139,7 @@ def process(raw):
             alert = "none"
 
         entry = {
-            "user_id": row.get(find_col(h, "UserID", "User ID", "USERID", "Additional UserID") or "", "—"),
+            "user_id": row.get(find_col(h, "User ID", "UserID", "USERID") or "", "—"),
             "name":    row.get(find_col(h, "Customer Name", "CustomerName", "Name") or "", "—"),
             "country": row.get(find_col(h, "Country") or "", "—"),
             "reg":     reg_date,
@@ -169,7 +175,7 @@ async def scan():
     log.info(f"This month: {len(this_month)} | Last month: {len(last_month)} | "
              f"Warnings: {len(warnings)} | Critical: {len(criticals)}")
 
-    # Critical alerts first — 100%+ withdrawn
+    # Critical alerts — 100%+ withdrawn
     for c in criticals:
         await tg(
             f"🔴 *CRITICAL — FULL WITHDRAWAL*\n\n"
@@ -204,8 +210,8 @@ async def scan():
     curr_withs = sum(c['withs'] for c in this_month)
     prev_deps  = sum(c['deps']  for c in last_month)
     prev_withs = sum(c['withs'] for c in last_month)
-
-    status = "🟢 All clear." if not warnings and not criticals else f"⚠️ {len(warnings)} warning · 🔴 {len(criticals)} critical"
+    status = "🟢 All clear." if not warnings and not criticals \
+             else f"⚠️ {len(warnings)} warning · 🔴 {len(criticals)} critical"
 
     await tg(
         f"📋 *VT Markets — Daily Report*\n\n"
@@ -222,6 +228,25 @@ async def scan():
 
     log.info("Scan complete.")
 
+async def check_manual_trigger(bot_token, chat_id):
+    """Check if user sent /scan command via Telegram."""
+    url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
+    async with httpx.AsyncClient(timeout=15) as c:
+        try:
+            r = await c.get(url, params={"timeout": 0})
+            updates = r.json().get("result", [])
+            for update in updates:
+                msg = update.get("message", {})
+                text = msg.get("text", "")
+                from_id = str(msg.get("chat", {}).get("id", ""))
+                if text == "/scan" and from_id == str(chat_id):
+                    # Confirm latest update ID so it's not re-processed
+                    await c.get(url, params={"offset": update["update_id"] + 1})
+                    return True
+        except Exception as e:
+            log.error(f"Manual trigger check error: {e}")
+    return False
+
 async def main():
     H = int(os.getenv("CHECK_HOUR", "9"))
     M = int(os.getenv("CHECK_MINUTE", "0"))
@@ -231,15 +256,26 @@ async def main():
         f"Daily scan at {H:02d}:{M:02d} UTC\n\n"
         f"⚠️ Alert at: 50%+ withdrawn\n"
         f"🔴 Critical at: 100%+ withdrawn\n"
-        f"Monitoring: current + previous month"
+        f"Monitoring: current + previous month\n\n"
+        f"Send /scan anytime to trigger manually."
     )
     while True:
         now = datetime.now(timezone.utc)
+
+        # Scheduled daily scan
         if now.hour == H and now.minute == M:
             await scan()
             await asyncio.sleep(61)
-        else:
-            await asyncio.sleep(30)
+            continue
+
+        # Manual scan via /scan command
+        if await check_manual_trigger(TG_TOKEN, TG_CHAT_ID):
+            await tg("🔄 *Manual scan triggered...*")
+            await scan()
+            await asyncio.sleep(5)
+            continue
+
+        await asyncio.sleep(30)
 
 if __name__ == "__main__":
     asyncio.run(main())
