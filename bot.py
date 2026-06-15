@@ -17,13 +17,6 @@ def parse_num(val):
     try: return float(str(val).replace(",","").replace("$","").replace(" ",""))
     except: return 0.0
 
-def find_col(headers, *candidates):
-    norm = {h.lower().replace(" ","").replace("_",""): h for h in headers}
-    for c in candidates:
-        k = c.lower().replace(" ","").replace("_","")
-        if k in norm: return norm[k]
-    return None
-
 def is_recent_month(date_str):
     try:
         today = datetime.now(timezone.utc)
@@ -33,9 +26,10 @@ def is_recent_month(date_str):
         else:
             prev_month, prev_year = curr_month - 1, curr_year
 
-        for fmt in ["%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m/%d/%Y"]:
+        s = str(date_str).strip()
+        for fmt in ["%m/%d/%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"]:
             try:
-                d = datetime.strptime(str(date_str).strip(), fmt)
+                d = datetime.strptime(s, fmt)
                 if d.month == curr_month and d.year == curr_year:
                     return True, "this month"
                 if d.month == prev_month and d.year == prev_year:
@@ -99,11 +93,9 @@ async def fetch_vt_data():
                 raise RuntimeError("No registration data captured.")
 
             raw = max(api_data, key=len)
-
-            # Log column names for debugging
             if raw:
                 log.info(f"Column names: {list(raw[0].keys())}")
-
+                log.info(f"Sample row: {raw[0]}")
             return raw
         finally:
             await browser.close()
@@ -119,16 +111,17 @@ def process(raw):
     this_month, last_month = [], []
 
     for row in raw:
-        h = list(row.keys())
-
-        reg_date = row.get(find_col(h, "Registration Date", "RegistrationDate", "Registrat") or "", "")
+        reg_date = str(row.get("Registration_Date", "")).strip()
         valid, period = is_recent_month(reg_date)
+
+        log.debug(f"Row {row.get('User_ID')} | reg: {reg_date} | valid: {valid} | period: {period}")
+
         if not valid:
             continue
 
-        deps  = parse_num(row.get(find_col(h, "First Deposit", "Deposits") or "", 0))
-        withs = parse_num(row.get(find_col(h, "Withdrawals", "Withdrawal") or "", 0))
-        net   = parse_num(row.get(find_col(h, "Net Deposits", "NetDeposits") or "", 0))
+        deps  = parse_num(row.get("First_Deposit", 0))
+        withs = parse_num(row.get("Withdrawals", 0))
+        net   = parse_num(row.get("Net_Deposits", 0))
         pct   = (withs / deps * 100) if deps > 0 else 0
 
         if pct >= 100:
@@ -139,9 +132,9 @@ def process(raw):
             alert = "none"
 
         entry = {
-            "user_id": row.get(find_col(h, "User ID", "UserID", "USERID") or "", "—"),
-            "name":    row.get(find_col(h, "Customer Name", "CustomerName", "Name") or "", "—"),
-            "country": row.get(find_col(h, "Country") or "", "—"),
+            "user_id": row.get("User_ID", "—"),
+            "name":    row.get("Customer_Name", "—"),
+            "country": row.get("Country", "—"),
             "reg":     reg_date,
             "deps":    deps,
             "withs":   withs,
@@ -228,9 +221,8 @@ async def scan():
 
     log.info("Scan complete.")
 
-async def check_manual_trigger(bot_token, chat_id):
-    """Check if user sent /scan command via Telegram."""
-    url = f"https://api.telegram.org/bot{bot_token}/getUpdates"
+async def check_manual_trigger():
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/getUpdates"
     async with httpx.AsyncClient(timeout=15) as c:
         try:
             r = await c.get(url, params={"timeout": 0})
@@ -239,8 +231,7 @@ async def check_manual_trigger(bot_token, chat_id):
                 msg = update.get("message", {})
                 text = msg.get("text", "")
                 from_id = str(msg.get("chat", {}).get("id", ""))
-                if text == "/scan" and from_id == str(chat_id):
-                    # Confirm latest update ID so it's not re-processed
+                if text == "/scan" and from_id == str(TG_CHAT_ID):
                     await c.get(url, params={"offset": update["update_id"] + 1})
                     return True
         except Exception as e:
@@ -262,14 +253,12 @@ async def main():
     while True:
         now = datetime.now(timezone.utc)
 
-        # Scheduled daily scan
         if now.hour == H and now.minute == M:
             await scan()
             await asyncio.sleep(61)
             continue
 
-        # Manual scan via /scan command
-        if await check_manual_trigger(TG_TOKEN, TG_CHAT_ID):
+        if await check_manual_trigger():
             await tg("🔄 *Manual scan triggered...*")
             await scan()
             await asyncio.sleep(5)
