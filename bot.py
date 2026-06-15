@@ -27,7 +27,10 @@ def is_recent_month(date_str):
             prev_month, prev_year = curr_month - 1, curr_year
 
         s = str(date_str).strip()
-        for fmt in ["%m/%d/%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y"]:
+        # Strip timestamp — take date part only
+        s = s.split(" ")[0].split("T")[0]
+
+        for fmt in ["%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"]:
             try:
                 d = datetime.strptime(s, fmt)
                 if d.month == curr_month and d.year == curr_year:
@@ -114,14 +117,12 @@ def process(raw):
         reg_date = str(row.get("Registration_Date", "")).strip()
         valid, period = is_recent_month(reg_date)
 
-        log.debug(f"Row {row.get('User_ID')} | reg: {reg_date} | valid: {valid} | period: {period}")
-
         if not valid:
             continue
 
-        deps  = parse_num(row.get("First_Deposit", 0))
+        deps  = parse_num(row.get("Net_Deposits", 0))
         withs = parse_num(row.get("Withdrawals", 0))
-        net   = parse_num(row.get("Net_Deposits", 0))
+        first = parse_num(row.get("First_Deposit", 0))
         pct   = (withs / deps * 100) if deps > 0 else 0
 
         if pct >= 100:
@@ -134,11 +135,11 @@ def process(raw):
         entry = {
             "user_id": row.get("User_ID", "—"),
             "name":    row.get("Customer_Name", "—"),
-            "country": row.get("Country", "—"),
-            "reg":     reg_date,
+            "country": str(row.get("Country", "—")).strip(),
+            "reg":     reg_date.split(" ")[0],
             "deps":    deps,
             "withs":   withs,
-            "net":     net,
+            "first":   first,
             "pct":     pct,
             "alert":   alert,
             "period":  period,
@@ -176,9 +177,8 @@ async def scan():
             f"🆔 `{c['user_id']}`\n"
             f"🌍 {c['country']}\n"
             f"📅 Registered: {c['reg']} _({c['period']})_\n\n"
-            f"💰 Deposited: *${c['deps']:,.2f}*\n"
-            f"📤 Withdrawn: *${c['withs']:,.2f}*\n"
-            f"📊 Net: *${c['net']:,.2f}*\n\n"
+            f"💰 Net Deposits: *${c['deps']:,.2f}*\n"
+            f"📤 Withdrawn: *${c['withs']:,.2f}*\n\n"
             f"🔴 *{c['pct']:.1f}%* withdrawn — full exit"
         )
         await asyncio.sleep(0.5)
@@ -191,9 +191,8 @@ async def scan():
             f"🆔 `{c['user_id']}`\n"
             f"🌍 {c['country']}\n"
             f"📅 Registered: {c['reg']} _({c['period']})_\n\n"
-            f"💰 Deposited: *${c['deps']:,.2f}*\n"
-            f"📤 Withdrawn: *${c['withs']:,.2f}*\n"
-            f"📊 Net: *${c['net']:,.2f}*\n\n"
+            f"💰 Net Deposits: *${c['deps']:,.2f}*\n"
+            f"📤 Withdrawn: *${c['withs']:,.2f}*\n\n"
             f"⚠️ *{c['pct']:.1f}%* withdrawn — monitor closely"
         )
         await asyncio.sleep(0.5)
@@ -210,12 +209,12 @@ async def scan():
         f"📋 *VT Markets — Daily Report*\n\n"
         f"📅 *{curr_label}*\n"
         f"👥 Members: *{len(this_month)}*\n"
-        f"💰 Deposited: *${curr_deps:,.2f}*\n"
-        f"📤 Withdrawn: *${curr_withs:,.2f}*\n\n"
+        f"💰 Total deposited: *${curr_deps:,.2f}*\n"
+        f"📤 Total withdrawn: *${curr_withs:,.2f}*\n\n"
         f"📅 *{prev_label}*\n"
         f"👥 Members: *{len(last_month)}*\n"
-        f"💰 Deposited: *${prev_deps:,.2f}*\n"
-        f"📤 Withdrawn: *${prev_withs:,.2f}*\n\n"
+        f"💰 Total deposited: *${prev_deps:,.2f}*\n"
+        f"📤 Total withdrawn: *${prev_withs:,.2f}*\n\n"
         f"{status}"
     )
 
