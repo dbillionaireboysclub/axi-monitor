@@ -6,13 +6,13 @@ from playwright.async_api import async_playwright, TimeoutError as PWTimeout
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-AXI_EMAIL    = os.environ["AXI_EMAIL"]
-AXI_PASSWORD = os.environ["AXI_PASSWORD"]
+VT_EMAIL     = os.environ["VT_EMAIL"]
+VT_PASSWORD  = os.environ["VT_PASSWORD"]
 TG_TOKEN     = os.environ["TG_TOKEN"]
 TG_CHAT_ID   = os.environ["TG_CHAT_ID"]
 THRESHOLD    = float(os.getenv("WITHDRAWAL_THRESHOLD", "0.50"))
-LOGIN_URL    = "https://records.axiaffiliates.com/v2/login/"
-REPORT_URL   = "https://records.axiaffiliates.com/partner/reports/registration"
+LOGIN_URL    = "https://go.vtaffiliates.com/v2/login/"
+REPORT_URL   = "https://go.vtaffiliates.com/partner/reports/registration"
 
 def parse_num(val):
     try: return float(str(val).replace(",","").replace("$","").replace(" ",""))
@@ -36,26 +36,26 @@ async def tg(text):
         except Exception as e:
             log.error(f"Telegram: {e}"); return False
 
-async def fetch_axi_csv():
+async def fetch_vt_csv():
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(headless=True, args=["--no-sandbox","--disable-dev-shm-usage"])
         page = await browser.new_page()
         try:
-            log.info("Going to login page...")
+            log.info("Going to VT Markets login page...")
             await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
             await asyncio.sleep(3)
 
             log.info("Filling login form...")
             await page.locator('#user').wait_for(timeout=10000)
-            await page.locator('#user').fill(AXI_EMAIL)
+            await page.locator('#user').fill(VT_EMAIL)
             await asyncio.sleep(0.5)
-            await page.locator('#password').fill(AXI_PASSWORD)
+            await page.locator('#password').fill(VT_PASSWORD)
             await asyncio.sleep(0.5)
 
             log.info("Submitting via JS...")
             await page.evaluate(f"""
-                document.querySelector('#user').value = '{AXI_EMAIL}';
-                document.querySelector('#password').value = '{AXI_PASSWORD}';
+                document.querySelector('#user').value = '{VT_EMAIL}';
+                document.querySelector('#password').value = '{VT_PASSWORD}';
                 sumbitForm();
             """)
 
@@ -116,10 +116,10 @@ def process(raw):
 
 async def scan():
     log.info("="*40 + " SCAN START")
-    try: rows = await fetch_axi_csv()
+    try: rows = await fetch_vt_csv()
     except Exception as e:
         log.error(f"Fetch failed: {e}")
-        await tg(f"❌ *Axi Monitor Error*\n\n`{e}`"); return
+        await tg(f"❌ *VT Markets Monitor Error*\n\n`{e}`"); return
     all_c, flagged = process(rows)
     log.info(f"Total: {len(all_c)} | Flagged: {len(flagged)}")
     for c in flagged:
@@ -131,16 +131,16 @@ async def scan():
             f"🔴 *{p:.1f}%* of capital withdrawn"
         )
         await asyncio.sleep(0.5)
-    msg = (f"✅ *Axi Scan — All Clear*\n{len(all_c)} clients checked" if not flagged
-           else f"📋 *Axi Scan Done*\n{len(all_c)} checked · {len(flagged)} flagged")
+    msg = (f"✅ *VT Markets Scan — All Clear*\n{len(all_c)} clients checked" if not flagged
+           else f"📋 *VT Markets Scan Done*\n{len(all_c)} checked · {len(flagged)} flagged")
     await tg(msg)
     log.info("Scan complete.")
 
 async def main():
     H = int(os.getenv("CHECK_HOUR","9"))
     M = int(os.getenv("CHECK_MINUTE","0"))
-    log.info(f"Axi Monitor started. Daily scan at {H:02d}:{M:02d} UTC")
-    await tg(f"🟢 *Axi Monitor Online*\nScan at {H:02d}:{M:02d} UTC · Threshold >{THRESHOLD*100:.0f}%")
+    log.info(f"VT Markets Monitor started. Daily scan at {H:02d}:{M:02d} UTC")
+    await tg(f"🟢 *VT Markets Monitor Online*\nScan at {H:02d}:{M:02d} UTC · Threshold >{THRESHOLD*100:.0f}%")
     while True:
         now = datetime.now(timezone.utc)
         if now.hour == H and now.minute == M:
